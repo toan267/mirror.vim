@@ -23,10 +23,10 @@
 " }}}
 "=============================================================================
 
-if exists('g:autoloaded_mirror')
-  finish
-endif
-let g:autoloaded_mirror = 1
+"if exists('g:autoloaded_mirror')
+  "finish
+"endif
+"let g:autoloaded_mirror = 1
 
 let g:mirror#config_path = expand(get(g:, 'mirror#config_path', '~/.mirrors'))
 let g:mirror#open_with = get(g:, 'mirror#open_with', 'Explore')
@@ -291,8 +291,10 @@ endfunction
 
 " Overwrite remote file with currently opened file
 function! s:PushFile(env)
-  let [port, local_file, remote_file] = s:PrepareToCopy(a:env)
-  let command = s:ScpCommand(port, local_file, remote_file)
+  let [port, local_file, remote_file, local_dir, remote_dir] = s:PrepareToRsync(a:env)
+  "let [port, local_file, remote_file] = s:PrepareToCopy(a:env)
+  let command = s:RsyncCommand(port, local_file, remote_file, remote_dir, 1)
+  "let command = s:ScpCommand(port, local_file, remote_file)
   let message = 'Pushed to ' . remote_file
   call s:ExecuteCommand('MirrorPush', command, message)
 endfunction
@@ -470,7 +472,124 @@ function! mirror#InitForBuffer(current_project)
 
   command! -buffer -bang -complete=customlist,s:EnvCompletion -nargs=?
         \ MirrorEnvironment call mirror#SetDefaultEnv(<q-args>, <bang>0)
+
+  command! -buffer -bang -nargs=? -complete=dir MirrorDeploy
+        \ call mirror#Deploy(<q-args>, <bang>0)
 endfunction
+
+" Overwrite remote file with currently opened file
+function! s:Deploy(src, env, global)
+  if empty(a:src)
+    let deploy_path = expand('%')
+  else
+    let deploy_path = a:src
+  endif
+  echo deploy_path
+
+  let [port, local_file, remote_file, local_dir, remote_dir] = s:PrepareToDeploy(a:env, deploy_path)
+
+
+  let command = s:RsyncCommand(port, local_file, remote_file, remote_dir, 1)
+  "let command = s:ScpCommand(port, local_file, remote_file)
+  let message = 'Deploy to ' . remote_file
+  echo command
+  return
+  call s:ExecuteCommand('MirrorDeploy', command, message)
+
+  return
+  "let command = s:ScpCommand(port, local_file, remote_file)
+  let command = s:RsyncCommand(port, local_file, remote_file, remote_dir, 1)
+  let message = 'Pushed to ' . remote_file
+  call s:ExecuteCommand('MirrorPush', command, message)
+endfunction
+
+" Find port, local_file and remote_file for current environment
+function! s:PrepareToDeploy(env, deploy_path)
+  let [local_path, remote_path] = s:FindPaths(a:env)
+  let local_path = a:deploy_path .'/'
+  let [host, port, path] = s:ParseRemotePath(remote_path . local_path)
+  let remote_file = printf('%s:%s', host, path)
+  "let local_file = expand('%:p')
+  let local_file = getcwd() . '/' . local_path
+  let local_dir = fnamemodify(local_file,':h')
+  let remote_dir = fnamemodify(path,':h')
+  return [port, local_file, remote_file, local_dir, remote_dir]
+endfunction
+
+
+
+function! mirror#Deploy(dir, global)
+  let env = s:ChooseEnv('')
+  if !empty(env)
+    call s:Deploy(a:dir, env, a:global)
+  endif
+endfunction
+
+function! mirror#Download(is_parent)
+  let cwd = getcwd()
+  let configs = mirror#ReadConfig()
+  if a:is_parent == 1
+    let remote_path = expand('%:h')
+  else
+    let remote_path = expand('%')
+  endif
+  let sync_path=''
+  
+  let projects = reverse(sort(keys(g:mirror#config)))
+  for project in projects
+    for remote in keys(configs[project])
+      if match(remote_path, configs[project][remote]) != -1
+        let remote_base_path = configs[project][remote]
+        let sync_path = split(remote_path, remote_base_path)[1]
+        break
+      endif
+    endfor
+  endfor
+
+  if strlen(sync_path) > 0
+    let [host, port, path] = s:ParseRemotePath(remote_path)
+    let remote_file = printf('%s:%s', host, path)
+    let local_file = cwd.sync_path
+    let local_dir = fnamemodify(local_file,':h')
+    let command = s:RsyncCommand(port, remote_file, local_file, local_dir, 0) " 0 for local
+    let message = 'Download to ' . local_file
+    call s:ExecuteCommand('MirrorDownload', command, message)
+  endif
+endfunction
+
+nmap <silent> <Plug>(mirror-remote-download) :<C-u>call mirror#Download(0)<CR>
+nmap <silent> <Plug>(mirror-remote-download-parent) :<C-u>call mirror#Download(1)<CR> 
+function! mirror#EnvironmentName()
+  if exists('b:project_with_mirror')
+    return s:FindDefaultEnv()
+  endif
+  return ''
+endfunction
+let g:mirror_environment_name=1
+
+" Build rsync command from args
+function! s:RsyncCommand(port, src_path, dest_path, dir_path, is_remote)
+  "let port = empty(a:port) ? '' : '-P ' . a:port
+  let port = empty(a:port) ? '' : '-e "ssh -p '.a:port.'"'
+  if a:is_remote == 1
+    return printf('rsync -acvz %s --rsync-path="mkdir -p %s && rsync" %s %s', port, a:dir_path, a:src_path, a:dest_path)
+  else
+    return printf('mkdir -p %s && rsync -acvz %s %s %s', a:dir_path, port, a:src_path, a:dest_path)
+  endif
+endfunction
+
+" Find port, local_file and remote_file for current environment
+function! s:PrepareToRsync(env)
+  let [local_path, remote_path] = s:FindPaths(a:env)
+  let [host, port, path] = s:ParseRemotePath(remote_path . local_path)
+  let remote_file = printf('%s:%s', host, path)
+  let local_file = expand('%:p')
+  let local_dir = fnamemodify(local_file,':h')
+  let remote_dir = fnamemodify(path,':h')
+  return [port, local_file, remote_file, local_dir, remote_dir]
+endfunction
+
+
 
 function! mirror#ProjectDiscovery()
   let file_path = expand('%:p')
