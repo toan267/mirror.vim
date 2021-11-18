@@ -23,10 +23,10 @@
 " }}}
 "=============================================================================
 
-if exists('g:autoloaded_mirror')
-  finish
-endif
-let g:autoloaded_mirror = 1
+"if exists('g:autoloaded_mirror')
+  "finish
+"endif
+"let g:autoloaded_mirror = 1
 
 let g:mirror#config_path = expand(get(g:, 'mirror#config_path', '~/.mirrors'))
 let g:mirror#open_with = get(g:, 'mirror#open_with', 'Explore')
@@ -479,8 +479,9 @@ endfunction
 
 " Overwrite remote file with currently opened file
 function! s:Deploy(src, env, global)
+  "return s:Confirm(a:src)
   if empty(a:src)
-    let deploy_path = expand('%')
+    let deploy_path = expand('%:h')
   else
     let deploy_path = a:src
   endif
@@ -490,23 +491,50 @@ function! s:Deploy(src, env, global)
 
 
   let command = s:RsyncCommand(port, local_file, remote_file, remote_dir, 1)
+  if a:global == 1
+    let command = command . ' --delete'
+  endif
   "let command = s:ScpCommand(port, local_file, remote_file)
   let message = 'Deploy to ' . remote_file
-  echo command
-  return
-  call s:ExecuteCommand('MirrorDeploy', command, message)
+  "echo command
+  if s:Confirm(command) == 1
+    call s:ExecuteCommand('MirrorDeploy', command, message)
+    "echo [command, message]
+  "else
+    "echo 'cancel'
+  endif
+  "return
 
-  return
+  "return
   "let command = s:ScpCommand(port, local_file, remote_file)
-  let command = s:RsyncCommand(port, local_file, remote_file, remote_dir, 1)
-  let message = 'Pushed to ' . remote_file
-  call s:ExecuteCommand('MirrorPush', command, message)
+  "let command = s:RsyncCommand(port, local_file, remote_file, remote_dir, 1)
+  "let message = 'Pushed to ' . remote_file
+  "call s:ExecuteCommand('MirrorPush', command, message)
 endfunction
+
+fun! s:Confirm(msg)
+    echo a:msg . ' (y|n): '
+    let l:answer = nr2char(getchar())
+
+    if l:answer ==? 'y'
+        return 1
+    elseif l:answer ==? 'n'
+        return 0
+    else
+        echo 'Please enter "y" or "n"'
+        return s:Confirm(a:msg)
+    endif
+endfun
+
 
 " Find port, local_file and remote_file for current environment
 function! s:PrepareToDeploy(env, deploy_path)
   let [local_path, remote_path] = s:FindPaths(a:env)
-  let local_path = a:deploy_path .'/'
+  if a:deploy_path[strlen(a:deploy_path) - 1] == '/'
+    let local_path = a:deploy_path
+  else
+    let local_path = a:deploy_path .'/'
+  endif
   let [host, port, path] = s:ParseRemotePath(remote_path . local_path)
   let remote_file = printf('%s:%s', host, path)
   "let local_file = expand('%:p')
