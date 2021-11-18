@@ -23,10 +23,10 @@
 " }}}
 "=============================================================================
 
-"if exists('g:autoloaded_mirror')
-  "finish
-"endif
-"let g:autoloaded_mirror = 1
+if exists('g:autoloaded_mirror')
+  finish
+endif
+let g:autoloaded_mirror = 1
 
 let g:mirror#config_path = expand(get(g:, 'mirror#config_path', '~/.mirrors'))
 let g:mirror#open_with = get(g:, 'mirror#open_with', 'Explore')
@@ -589,7 +589,8 @@ function! s:PrepareToRsync(env)
   return [port, local_file, remote_file, local_dir, remote_dir]
 endfunction
 
-
+nmap <C-k>m <Plug>(mirror-remote-download)
+nmap <C-k>M <Plug>(mirror-remote-download-parent)
 
 function! mirror#ProjectDiscovery()
   let file_path = expand('%:p')
